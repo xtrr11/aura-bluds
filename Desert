@@ -1,0 +1,387 @@
+-- 🔥 AURA BLUDS v2.9 - Desert Storm | Full Fixed
+local ScriptVersion = "2.9-FULL-FIX"
+
+print("🔥 AURA BLUDS v"..ScriptVersion.." loading...")
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RS = game:GetService("RunService")
+local Cam = workspace.CurrentCamera
+local LP = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+
+local Settings = {
+    Aimbot = { Enabled = true, Smooth = 4, FOV = 140, ShowFOV = true, TargetPart = "Head", VisibilityCheck = true },
+    ESP = { Boxes = true, Names = true, Skeleton = true, VisibilityCheck = true },
+    Exploits = { SpeedHack = false, Speed = 50, ShowInventory = false }
+}
+
+local ESPTable = {}
+
+local StatusText = Drawing.new("Text")
+StatusText.Size = 24
+StatusText.Center = true
+StatusText.Outline = true
+StatusText.Visible = false
+
+local function IsVisible(target)
+    if not Settings.Aimbot.VisibilityCheck then return true end
+    local origin = Cam.CFrame.Position
+    local direction = (target.Position - origin).Unit * (target.Position - origin).Magnitude
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = {LP.Character, Cam}
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+    params.IgnoreWater = true
+    local result = Workspace:Raycast(origin, direction, params)
+    return not result or result.Instance:FindFirstAncestor(target.Parent.Name) or result.Instance == target
+end
+
+local function CreateESP(plr)
+    if plr == LP then return end
+    local Box = Drawing.new("Square")
+    Box.Thickness = 2
+    Box.Filled = false
+    Box.Visible = false
+
+    local Name = Drawing.new("Text")
+    Name.Size = 15
+    Name.Center = true
+    Name.Outline = true
+    Name.Visible = false
+
+    ESPTable[plr] = {Box = Box, Name = Name}
+end
+
+for _, p in pairs(Players:GetPlayers()) do CreateESP(p) end
+Players.PlayerAdded:Connect(CreateESP)
+
+local AimCircle = Drawing.new("Circle")
+AimCircle.Color = Color3.fromRGB(255, 80, 120)
+AimCircle.Thickness = 2
+AimCircle.Filled = false
+
+local function GetClosest()
+    local best, dist = nil, Settings.Aimbot.FOV
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP and p.Character then
+            local part = p.Character:FindFirstChild(Settings.Aimbot.TargetPart) or p.Character:FindFirstChild("Head")
+            if part then
+                local screen, onScreen = Cam:WorldToViewportPoint(part.Position)
+                if onScreen then
+                    local d = (Vector2.new(screen.X, screen.Y) - Vector2.new(Cam.ViewportSize.X/2, Cam.ViewportSize.Y/2)).Magnitude
+                    if d < dist and (not Settings.Aimbot.VisibilityCheck or IsVisible(part)) then
+                        dist = d
+                        best = {Part = part, Player = p}
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+-- Inventory Viewer with Armor
+local InventoryGui = Instance.new("ScreenGui", LP.PlayerGui)
+InventoryGui.Name = "AuraInv"
+InventoryGui.ResetOnSpawn = false
+
+local InvFrame = Instance.new("Frame", InventoryGui)
+InvFrame.Size = UDim2.new(0, 360, 0, 520)
+InvFrame.Position = UDim2.new(0.7, 0, 0.1, 0)
+InvFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+InvFrame.BorderSizePixel = 0
+InvFrame.Visible = false
+
+local InvTitle = Instance.new("TextLabel", InvFrame)
+InvTitle.Size = UDim2.new(1,0,0,50)
+InvTitle.BackgroundColor3 = Color3.fromRGB(30,30,30)
+InvTitle.Text = "   Inventory Viewer"
+InvTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+InvTitle.TextScaled = true
+InvTitle.Font = Enum.Font.GothamBold
+
+local PlayerNameLabel = Instance.new("TextLabel", InvFrame)
+PlayerNameLabel.Size = UDim2.new(1,0,0,30)
+PlayerNameLabel.Position = UDim2.new(0,0,0,50)
+PlayerNameLabel.BackgroundTransparency = 1
+PlayerNameLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+PlayerNameLabel.TextScaled = true
+PlayerNameLabel.Font = Enum.Font.GothamBold
+
+local ArmorLabel = Instance.new("TextLabel", InvFrame)
+ArmorLabel.Size = UDim2.new(1, -20, 0, 30)
+ArmorLabel.Position = UDim2.new(0,10,0,85)
+ArmorLabel.BackgroundTransparency = 1
+ArmorLabel.Text = "Armor:"
+ArmorLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+ArmorLabel.TextXAlignment = Enum.TextXAlignment.Left
+ArmorLabel.TextSize = 16
+
+local ArmorList = Instance.new("TextLabel", InvFrame)
+ArmorList.Size = UDim2.new(1, -20, 0, 100)
+ArmorList.Position = UDim2.new(0,10,0,115)
+ArmorList.BackgroundTransparency = 1
+ArmorList.TextColor3 = Color3.fromRGB(255, 200, 100)
+ArmorList.TextXAlignment = Enum.TextXAlignment.Left
+ArmorList.TextYAlignment = Enum.TextYAlignment.Top
+ArmorList.TextWrapped = true
+ArmorList.TextSize = 15
+
+local HotbarLabel = Instance.new("TextLabel", InvFrame)
+HotbarLabel.Size = UDim2.new(1, -20, 0, 30)
+HotbarLabel.Position = UDim2.new(0,10,0,225)
+HotbarLabel.BackgroundTransparency = 1
+HotbarLabel.Text = "Hotbar:"
+HotbarLabel.TextColor3 = Color3.fromRGB(255, 200, 100)
+HotbarLabel.TextXAlignment = Enum.TextXAlignment.Left
+HotbarLabel.TextSize = 16
+
+local HotbarList = Instance.new("TextLabel", InvFrame)
+HotbarList.Size = UDim2.new(1, -20, 0, 80)
+HotbarList.Position = UDim2.new(0,10,0,255)
+HotbarList.BackgroundTransparency = 1
+HotbarList.TextColor3 = Color3.fromRGB(220, 220, 220)
+HotbarList.TextXAlignment = Enum.TextXAlignment.Left
+HotbarList.TextYAlignment = Enum.TextYAlignment.Top
+HotbarList.TextWrapped = true
+HotbarList.TextSize = 15
+
+local FullLabel = Instance.new("TextLabel", InvFrame)
+FullLabel.Size = UDim2.new(1, -20, 0, 30)
+FullLabel.Position = UDim2.new(0,10,0,345)
+FullLabel.BackgroundTransparency = 1
+FullLabel.Text = "Backpack:"
+FullLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+FullLabel.TextXAlignment = Enum.TextXAlignment.Left
+FullLabel.TextSize = 16
+
+local FullList = Instance.new("TextLabel", InvFrame)
+FullList.Size = UDim2.new(1, -20, 1, -385)
+FullList.Position = UDim2.new(0,10,0,375)
+FullList.BackgroundTransparency = 1
+FullList.TextColor3 = Color3.fromRGB(220, 220, 220)
+FullList.TextXAlignment = Enum.TextXAlignment.Left
+FullList.TextYAlignment = Enum.TextYAlignment.Top
+FullList.TextWrapped = true
+FullList.TextSize = 15
+
+local function ShowInventory(plr)
+    if not plr or not plr.Character then 
+        InvFrame.Visible = false 
+        return 
+    end
+    PlayerNameLabel.Text = "   Viewing: " .. plr.Name
+
+    local character = plr.Character
+    local backpack = plr:FindFirstChild("Backpack")
+
+    local armorItems = {}
+    if character then
+        for _, item in ipairs(character:GetChildren()) do
+            if item:IsA("Accessory") or string.find(item.Name:lower(), "helmet") or string.find(item.Name:lower(), "vest") or string.find(item.Name:lower(), "armor") then
+                table.insert(armorItems, "• " .. item.Name)
+            end
+        end
+    end
+    ArmorList.Text = #armorItems > 0 and table.concat(armorItems, "\n") or "   No Armor"
+
+    local hotbarItems = {}
+    if character then
+        for _, item in ipairs(character:GetChildren()) do
+            if item:IsA("Tool") then
+                table.insert(hotbarItems, "• " .. item.Name .. " [Equipped]")
+            end
+        end
+    end
+    HotbarList.Text = #hotbarItems > 0 and table.concat(hotbarItems, "\n") or "   Empty"
+
+    local fullItems = {}
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") or item:IsA("HopperBin") then
+                table.insert(fullItems, "• " .. item.Name)
+            end
+        end
+    end
+    FullList.Text = #fullItems > 0 and table.concat(fullItems, "\n") or "   Empty"
+
+    InvFrame.Visible = true
+end
+
+RS.RenderStepped:Connect(function()
+    local center = Vector2.new(Cam.ViewportSize.X/2, Cam.ViewportSize.Y/2)
+
+    AimCircle.Position = center
+    AimCircle.Radius = Settings.Aimbot.FOV
+    AimCircle.Visible = Settings.Aimbot.ShowFOV
+
+    for plr, data in pairs(ESPTable) do
+        local char = plr.Character
+        if char and char:FindFirstChild("Head") and char:FindFirstChild("HumanoidRootPart") then
+            local root = char.HumanoidRootPart
+            local head = char.Head
+            local rPos = Cam:WorldToViewportPoint(root.Position)
+            local hPos = Cam:WorldToViewportPoint(head.Position)
+
+            if rPos.Z > 0 then
+                local vis = IsVisible(head)
+                local color = vis and Color3.fromRGB(0,255,100) or Color3.fromRGB(255,50,50)
+
+                local height = (rPos.Y - hPos.Y) * 2.6
+                local width = height * 0.5
+
+                data.Box.Size = Vector2.new(width, height)
+                data.Box.Position = Vector2.new(rPos.X - width/2, hPos.Y - height*0.15)
+                data.Box.Color = color
+                data.Box.Visible = Settings.ESP.Boxes
+
+                local dist = math.floor((Cam.CFrame.Position - root.Position).Magnitude)
+                data.Name.Text = plr.Name .. " ["..dist.."m]"
+                data.Name.Position = Vector2.new(rPos.X, hPos.Y - height*0.45)
+                data.Name.Color = color
+                data.Name.Visible = Settings.ESP.Names
+            else
+                data.Box.Visible = false
+                data.Name.Visible = false
+            end
+        else
+            data.Box.Visible = false
+            data.Name.Visible = false
+        end
+    end
+
+    if Settings.Exploits.ShowInventory then
+        local closest = nil
+        local minDist = math.huge
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LP and plr.Character and plr.Character:FindFirstChild("Head") then
+                local head = plr.Character.Head
+                local screen, onScreen = Cam:WorldToViewportPoint(head.Position)
+                if onScreen then
+                    local d = (Vector2.new(screen.X, screen.Y) - center).Magnitude
+                    if d <= Settings.Aimbot.FOV and d < minDist then
+                        minDist = d
+                        closest = plr
+                    end
+                end
+            end
+        end
+        if closest then ShowInventory(closest) else InvFrame.Visible = false end
+    else
+        InvFrame.Visible = false
+    end
+
+    local closestAim = GetClosest()
+    if closestAim then
+        local vis = IsVisible(closestAim.Part)
+        StatusText.Text = closestAim.Player.Name .. (vis and " ✓" or " ✗")
+        StatusText.Color = vis and Color3.fromRGB(0,255,100) or Color3.fromRGB(255,100,100)
+        StatusText.Position = Vector2.new(center.X, center.Y + Settings.Aimbot.FOV + 30)
+        StatusText.Visible = true
+    else
+        StatusText.Visible = false
+    end
+
+    if Settings.Aimbot.Enabled and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        local t = GetClosest()
+        if t and t.Part then
+            Cam.CFrame = Cam.CFrame:Lerp(CFrame.lookAt(Cam.CFrame.Position, t.Part.Position), 1/Settings.Aimbot.Smooth)
+        end
+    end
+end)
+
+-- ==================== FULL MENU ====================
+local SG = Instance.new("ScreenGui", LP.PlayerGui)
+SG.Name = "AuraBluds"
+SG.ResetOnSpawn = false
+
+local Main = Instance.new("Frame", SG)
+Main.Size = UDim2.new(0, 620, 0, 680)
+Main.Position = UDim2.new(0.5, -310, 0.5, -340)
+Main.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+Main.BorderSizePixel = 0
+Main.Visible = true
+
+local TopBar = Instance.new("Frame", Main)
+TopBar.Size = UDim2.new(1,0,0,60)
+TopBar.BackgroundColor3 = Color3.fromRGB(25,25,25)
+
+local Title = Instance.new("TextLabel", TopBar)
+Title.Size = UDim2.new(1,0,1,0)
+Title.BackgroundTransparency = 1
+Title.Text = "AURA BLUDS - Desert Storm"
+Title.TextColor3 = Color3.fromRGB(255, 60, 100)
+Title.TextScaled = true
+Title.Font = Enum.Font.GothamBlack
+
+local currentTab = "Aimbot"
+
+local AFrame = Instance.new("Frame", Main) 
+AFrame.Size = UDim2.new(1,0,1,-60) 
+AFrame.Position = UDim2.new(0,0,0,60) 
+AFrame.BackgroundColor3 = Color3.fromRGB(22,22,22)
+
+local VFrame = Instance.new("Frame", Main) 
+VFrame.Size = UDim2.new(1,0,1,-60) 
+VFrame.Position = UDim2.new(0,0,0,60) 
+VFrame.BackgroundColor3 = Color3.fromRGB(22,22,22) 
+VFrame.Visible = false
+
+local EFrame = Instance.new("Frame", Main) 
+EFrame.Size = UDim2.new(1,0,1,-60) 
+EFrame.Position = UDim2.new(0,0,0,60) 
+EFrame.BackgroundColor3 = Color3.fromRGB(22,22,22) 
+EFrame.Visible = false
+
+local function CreateToggle(parent, y, text, default, callback)
+    local btn = Instance.new("TextButton", parent)
+    btn.Size = UDim2.new(0.9,0,0,42)
+    btn.Position = UDim2.new(0.05,0,0,y)
+    btn.BackgroundColor3 = default and Color3.fromRGB(255,60,100) or Color3.fromRGB(45,45,45)
+    btn.Text = "   "..text.."   "..(default and "ON" or "OFF")
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.TextSize = 16
+    btn.MouseButton1Click:Connect(function()
+        default = not default
+        btn.BackgroundColor3 = default and Color3.fromRGB(255,60,100) or Color3.fromRGB(45,45,45)
+        btn.Text = "   "..text.."   "..(default and "ON" or "OFF")
+        callback(default)
+    end)
+end
+
+CreateToggle(AFrame, 20, "Aimbot Enabled", true, function(v) Settings.Aimbot.Enabled = v end)
+CreateToggle(AFrame, 70, "Show FOV", true, function(v) Settings.Aimbot.ShowFOV = v end)
+CreateToggle(AFrame, 120, "Visibility Check", true, function(v) Settings.Aimbot.VisibilityCheck = v end)
+
+CreateToggle(VFrame, 20, "ESP Boxes", true, function(v) Settings.ESP.Boxes = v end)
+CreateToggle(VFrame, 70, "ESP Names", true, function(v) Settings.ESP.Names = v end)
+CreateToggle(VFrame, 120, "ESP Skeleton", true, function(v) Settings.ESP.Skeleton = v end)
+CreateToggle(VFrame, 170, "Visibility Check", true, function(v) Settings.ESP.VisibilityCheck = v end)
+
+CreateToggle(EFrame, 20, "Speed Hack", false, function(v) Settings.Exploits.SpeedHack = v end)
+CreateToggle(EFrame, 70, "Inventory Viewer", false, function(v) Settings.Exploits.ShowInventory = v end)
+
+local function SwitchTab(tab)
+    currentTab = tab
+    AFrame.Visible = tab == "Aimbot"
+    VFrame.Visible = tab == "Visuals"
+    EFrame.Visible = tab == "Exploits"
+end
+
+for i, name in ipairs({"Aimbot", "Visuals", "Exploits"}) do
+    local btn = Instance.new("TextButton", TopBar)
+    btn.Size = UDim2.new(0.33,0,0.6,0)
+    btn.Position = UDim2.new((i-1)*0.33,0,0.4,0)
+    btn.Text = name
+    btn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.MouseButton1Click:Connect(function() SwitchTab(name) end)
+end
+
+UIS.InputBegan:Connect(function(i)
+    if i.KeyCode == Enum.KeyCode.RightShift then
+        Main.Visible = not Main.Visible
+    end
+end)
+
+print("✅ Full Menu Loaded | Press RightShift")
