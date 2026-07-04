@@ -1,0 +1,238 @@
+-- 🔥 AURA BLUDS - Auto Updater + Green/Red ESP + VISIBLE Status
+local ScriptVersion = "1.4"
+
+local GithubRaw = "https://raw.githubusercontent.com/xtrr11/aura-bluds/refs/heads/main/aurabluds.lua"
+
+print("🔥 AURA BLUDS v"..ScriptVersion.." - Checking for updates...")
+
+local success, response = pcall(function()
+    return game:HttpGet(GithubRaw)
+end)
+
+if success and response and response:find("AURA BLUDS") then
+    local remoteVersion = response:match("--%s*Version:%s*(%d+%.%d+)") or "1.0"
+    if remoteVersion > ScriptVersion then
+        print("🟢 Update found! Loading latest...")
+        loadstring(response)()
+        return
+    else
+        print("✅ Latest version.")
+    end
+else
+    print("⚠️ Running offline.")
+end
+
+-- ==================== MAIN SCRIPT ====================
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RS = game:GetService("RunService")
+local Cam = workspace.CurrentCamera
+local LP = Players.LocalPlayer
+local Workspace = game:GetService("Workspace")
+
+local Settings = {
+    Aimbot = {
+        Enabled = true,
+        Smooth = 3,
+        FOV = 160,
+        ShowFOV = true,
+        TargetPart = "Head",
+        VisibilityCheck = true
+    },
+    ESP = {Boxes = true, Names = true, Skeleton = true}
+}
+
+local ESPTable = {}
+
+local StatusText = Drawing.new("Text")
+StatusText.Color = Color3.fromRGB(0, 255, 100)
+StatusText.Size = 18
+StatusText.Center = true
+StatusText.Outline = true
+StatusText.Visible = false
+
+local function IsVisible(target)
+    if not Settings.Aimbot.VisibilityCheck then return true end
+    local origin = Cam.CFrame.Position
+    local direction = (target.Position - origin)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {LP.Character}
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.IgnoreWater = true
+
+    local result = Workspace:Raycast(origin, direction, raycastParams)
+    if result then
+        local hitChar = result.Instance:FindFirstAncestorWhichIsA("Model")
+        return hitChar and hitChar == target.Parent
+    end
+    return true
+end
+
+local function CreateESP(plr)
+    if plr == LP then return end
+
+    local Box = Drawing.new("Square")
+    Box.Thickness = 2
+    Box.Filled = false
+    Box.Visible = false
+
+    local Name = Drawing.new("Text")
+    Name.Size = 15
+    Name.Center = true
+    Name.Outline = true
+    Name.Visible = false
+
+    local Lines = {}
+    ESPTable[plr] = {Box = Box, Name = Name, Lines = Lines}
+
+    RS.RenderStepped:Connect(function()
+        local Char = plr.Character
+        if not Char or not Char:FindFirstChild("HumanoidRootPart") or not Char:FindFirstChild("Head") then
+            Box.Visible = false
+            Name.Visible = false
+            for _, l in pairs(Lines) do l.Visible = false end
+            return
+        end
+
+        local Root = Char.HumanoidRootPart
+        local Head = Char.Head
+        local RootPos = Cam:WorldToViewportPoint(Root.Position)
+        local HeadPos = Cam:WorldToViewportPoint(Head.Position)
+
+        if RootPos.Z > 0 then
+            local isVisible = IsVisible(Head)
+
+            local boxColor = isVisible and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 50, 50)
+            local nameColor = isVisible and Color3.fromRGB(100, 255, 150) or Color3.fromRGB(255, 100, 100)
+            local lineColor = isVisible and Color3.fromRGB(0, 255, 150) or Color3.fromRGB(255, 80, 80)
+
+            local Height = (RootPos.Y - HeadPos.Y) * 2.8
+            local Width = Height * 0.55
+
+            Box.Size = Vector2.new(Width, Height)
+            Box.Position = Vector2.new(RootPos.X - Width/2, HeadPos.Y - Height*0.15)
+            Box.Color = boxColor
+            Box.Visible = Settings.ESP.Boxes
+
+            local Distance = math.floor((Cam.CFrame.Position - Root.Position).Magnitude)
+            Name.Text = plr.Name .. " [" .. Distance .. "m]"
+            Name.Position = Vector2.new(RootPos.X, HeadPos.Y - Height*0.45)
+            Name.Color = nameColor
+            Name.Visible = Settings.ESP.Names
+
+            if Settings.ESP.Skeleton then
+                local function Line(a, b)
+                    if not a or not b then return end
+                    local key = tostring(a) .. tostring(b)
+                    local l = Lines[key] or Drawing.new("Line")
+                    l.Color = lineColor
+                    l.Thickness = 1.8
+                    local p1 = Cam:WorldToViewportPoint(a.Position)
+                    local p2 = Cam:WorldToViewportPoint(b.Position)
+                    l.From = Vector2.new(p1.X, p1.Y)
+                    l.To = Vector2.new(p2.X, p2.Y)
+                    l.Visible = true
+                    Lines[key] = l
+                end
+
+                local Torso = Char:FindFirstChild("UpperTorso") or Char:FindFirstChild("Torso")
+                local LA = Char:FindFirstChild("LeftUpperArm")
+                local RA = Char:FindFirstChild("RightUpperArm")
+                local LL = Char:FindFirstChild("LeftUpperLeg")
+                local RL = Char:FindFirstChild("RightUpperLeg")
+
+                if Head and Torso then Line(Head, Torso) end
+                if Torso then
+                    if LA then Line(Torso, LA) end
+                    if RA then Line(Torso, RA) end
+                    if LL then Line(Torso, LL) end
+                    if RL then Line(Torso, RL) end
+                end
+            else
+                for _, l in pairs(Lines) do l.Visible = false end
+            end
+        else
+            Box.Visible = false
+            Name.Visible = false
+            for _, l in pairs(Lines) do l.Visible = false end
+        end
+    end)
+end
+
+for _, p in pairs(Players:GetPlayers()) do CreateESP(p) end
+Players.PlayerAdded:Connect(CreateESP)
+
+-- FOV + Aimbot + VISIBLE Status
+local Circle = Drawing.new("Circle")
+Circle.Color = Color3.fromRGB(255, 80, 120)
+Circle.Thickness = 2
+Circle.Filled = false
+
+local function GetClosest()
+    local best, d = nil, Settings.Aimbot.FOV
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LP and p.Character then
+            local targetPart = p.Character:FindFirstChild(Settings.Aimbot.TargetPart) or p.Character:FindFirstChild("Head")
+            if targetPart then
+                local sp, onScreen = Cam:WorldToViewportPoint(targetPart.Position)
+                if onScreen and IsVisible(targetPart) then
+                    local dist = (Vector2.new(sp.X, sp.Y) - Vector2.new(Cam.ViewportSize.X/2, Cam.ViewportSize.Y/2)).Magnitude
+                    if dist < d then 
+                        d = dist 
+                        best = targetPart 
+                    end
+                end
+            end
+        end
+    end
+    return best
+end
+
+RS.RenderStepped:Connect(function()
+    local center = Vector2.new(Cam.ViewportSize.X/2, Cam.ViewportSize.Y/2)
+    
+    Circle.Position = center
+    Circle.Radius = Settings.Aimbot.FOV
+    Circle.Visible = Settings.Aimbot.ShowFOV and Settings.Aimbot.Enabled
+
+    if Settings.Aimbot.Enabled then
+        local target = GetClosest()
+        if target then
+            local isVis = IsVisible(target)
+            StatusText.Text = isVis and "VISIBLE" or "OBSTRUCTED"
+            StatusText.Color = isVis and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 100, 100)
+            StatusText.Position = Vector2.new(center.X, center.Y + Settings.Aimbot.FOV + 25)
+            StatusText.Visible = true
+        else
+            StatusText.Visible = false
+        end
+    else
+        StatusText.Visible = false
+    end
+
+    if Settings.Aimbot.Enabled and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        local t = GetClosest()
+        if t then
+            Cam.CFrame = Cam.CFrame:Lerp(CFrame.lookAt(Cam.CFrame.Position, t.Position), 1 / Settings.Aimbot.Smooth)
+        end
+    end
+end)
+
+-- Menu (Locked)
+local SG = Instance.new("ScreenGui", LP.PlayerGui)
+SG.Name = "AuraBluds"
+SG.ResetOnSpawn = false
+
+local Main = Instance.new("Frame", SG)
+Main.Size = UDim2.new(0, 520, 0, 520)
+Main.Position = UDim2.new(0.5, -260, 0.5, -260)
+Main.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.Draggable = false
+
+-- [Your existing menu code goes here - toggles, slider, etc.]
+-- I'll keep it short for this message. Replace the menu part with your previous version if needed.
+
+print("🔥 AURA BLUDS v"..ScriptVersion.." Loaded | VISIBLE status active")
