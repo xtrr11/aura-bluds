@@ -1,5 +1,5 @@
--- 🔥 AURA BLUDS v2.9 - Desert Storm | Big Head + All Features
-local ScriptVersion = "2.9-BIG-HEAD"
+-- 🔥 AURA BLUDS v2.9 - Desert Storm | ESP Default ON
+local ScriptVersion = "2.9-ESP-DEFAULT"
 
 print("🔥 AURA BLUDS v"..ScriptVersion.." loading... Key: 123")
 
@@ -11,15 +11,19 @@ local function LoadFullScript()
     local Cam = workspace.CurrentCamera
     local LP = Players.LocalPlayer
     local Workspace = game:GetService("Workspace")
+    local Mouse = LP:GetMouse()
+    local HttpService = game:GetService("HttpService")
 
     local Settings = {
-        Aimbot = { Enabled = true, Smooth = 4, FOV = 140, ShowFOV = true, TargetPart = "Head", VisibilityCheck = true, FOVColor = Color3.fromRGB(255, 80, 120) },
-        ESP = { Boxes = true, Names = true, VisibilityCheck = true, BoxColorVisible = Color3.fromRGB(0,255,100), BoxColorHidden = Color3.fromRGB(255,50,50), Watching = true, GunHolder = true },
+        Aimbot = { Enabled = false, Smooth = 4, FOV = 140, ShowFOV = false, TargetPart = "Head", VisibilityCheck = true, FOVColor = Color3.fromRGB(255, 80, 120) },
+        SilentAim = { Enabled = false, HitChance = 85, FOV = 120, ShowFOV = false, FOVColor = Color3.fromRGB(0, 255, 150) },
+        ESP = { Boxes = true, Names = true, HealthBar = true, Caution = true, GunHolder = true, Tracers = true },
         Exploits = { SpeedHack = false, Speed = 50, ShowInventory = false, FullBright = false, SpiderMan = false, BigHead = false, BigHeadSize = 5 }
     }
 
     local ESPTable = {}
     local FullBrightConnection = nil
+    local SpeedConnection = nil
     local CurrentSpiderKey = Enum.KeyCode.E
     local SpiderConnection = nil
     local BigHeadConnections = {}
@@ -34,6 +38,11 @@ local function LoadFullScript()
     AimCircle.Color = Settings.Aimbot.FOVColor
     AimCircle.Thickness = 2
     AimCircle.Filled = false
+
+    local SilentAimCircle = Drawing.new("Circle")
+    SilentAimCircle.Color = Settings.SilentAim.FOVColor
+    SilentAimCircle.Thickness = 2
+    SilentAimCircle.Filled = false
 
     local function IsVisible(target)
         if not Settings.Aimbot.VisibilityCheck then return true end
@@ -51,16 +60,19 @@ local function LoadFullScript()
         if plr == LP then return end
         local Box = Drawing.new("Square") Box.Thickness = 2 Box.Filled = false Box.Visible = false
         local Name = Drawing.new("Text") Name.Size = 13 Name.Center = true Name.Outline = true Name.Visible = false
-        local Watching = Drawing.new("Text") Watching.Size = 16 Watching.Center = true Watching.Outline = true Watching.Visible = false Watching.Color = Color3.fromRGB(255, 165, 0) Watching.Text = "WATCHING"
+        local Caution = Drawing.new("Text") Caution.Size = 16 Caution.Center = true Caution.Outline = true Caution.Visible = false Caution.Color = Color3.fromRGB(255, 165, 0) Caution.Text = "CAUTION"
         local GunHolder = Drawing.new("Text") GunHolder.Size = 13 GunHolder.Center = true GunHolder.Outline = true GunHolder.Visible = false GunHolder.Color = Color3.fromRGB(100, 200, 255)
-        ESPTable[plr] = {Box = Box, Name = Name, Watching = Watching, GunHolder = GunHolder}
+        local HealthBar = Drawing.new("Square") HealthBar.Filled = true HealthBar.Thickness = 1 HealthBar.Visible = false
+        local Tracer = Drawing.new("Line") Tracer.Thickness = 2 Tracer.Visible = false
+        ESPTable[plr] = {Box = Box, Name = Name, Caution = Caution, GunHolder = GunHolder, HealthBar = HealthBar, Tracer = Tracer}
     end
 
     for _, p in pairs(Players:GetPlayers()) do CreateESP(p) end
     Players.PlayerAdded:Connect(CreateESP)
 
-    local function GetClosest()
-        local best, dist = nil, Settings.Aimbot.FOV
+    local function GetClosest(fovOverride)
+        local fov = fovOverride or Settings.Aimbot.FOV
+        local best, dist = nil, fov
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= LP and p.Character then
                 local part = p.Character:FindFirstChild(Settings.Aimbot.TargetPart) or p.Character:FindFirstChild("Head")
@@ -79,6 +91,30 @@ local function LoadFullScript()
         return best
     end
 
+    -- SILENT AIM
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+        local args = {...}
+        local method = getnamecallmethod()
+
+        if Settings.SilentAim.Enabled and method == "FireServer" then
+            local name = tostring(self):lower()
+            if name:find("bullet") or name:find("shoot") or name:find("fire") or name:find("gun") or name:find("replicate") then
+                local closest = GetClosest(Settings.SilentAim.FOV)
+                if closest and closest.Part and math.random(1,100) <= Settings.SilentAim.HitChance then
+                    local offset = Vector3.new(
+                        math.random(-3,3) * 0.9,
+                        math.random(-2,2) * 0.7,
+                        math.random(-3,3) * 0.9
+                    )
+                    args[2] = closest.Part.Position + offset
+                end
+            end
+        end
+
+        return oldNamecall(self, unpack(args))
+    end)
+
     local function ToggleFullBright(state)
         if FullBrightConnection then FullBrightConnection:Disconnect() FullBrightConnection = nil end
         if not state then
@@ -87,6 +123,29 @@ local function LoadFullScript()
         FullBrightConnection = RS.RenderStepped:Connect(function()
             Lighting.Brightness = 3 Lighting.ClockTime = 12 Lighting.FogEnd = 100000 Lighting.GlobalShadows = false Lighting.Ambient = Color3.fromRGB(255,255,255)
         end)
+    end
+
+    local function StartSpeedHack()
+        if SpeedConnection then return end
+        SpeedConnection = RS.RenderStepped:Connect(function()
+            if not Settings.Exploits.SpeedHack then return end
+            local char = LP.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local root = char.HumanoidRootPart
+                local moveDir = Vector3.new()
+                if UIS:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Cam.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Cam.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Cam.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Cam.CFrame.RightVector end
+                if moveDir.Magnitude > 0 then
+                    root.Velocity = moveDir.Unit * Settings.Exploits.Speed
+                end
+            end
+        end)
+    end
+
+    local function StopSpeedHack()
+        if SpeedConnection then SpeedConnection:Disconnect() SpeedConnection = nil end
     end
 
     local function StartSpiderMan()
@@ -115,7 +174,6 @@ local function LoadFullScript()
         local char = LP.Character if char and char:FindFirstChild("Humanoid") then char.Humanoid.PlatformStand = false end
     end
 
-    -- BIG HEAD
     local function ToggleBigHead(state)
         for _, conn in pairs(BigHeadConnections) do conn:Disconnect() end
         BigHeadConnections = {}
@@ -124,7 +182,7 @@ local function LoadFullScript()
             for _, plr in pairs(Players:GetPlayers()) do
                 if plr.Character and plr.Character:FindFirstChild("Head") then
                     local head = plr.Character.Head
-                    head.Size = Vector3.new(2,1,1) -- Reset
+                    head.Size = Vector3.new(2,1,1)
                 end
             end
             return
@@ -237,7 +295,10 @@ local function LoadFullScript()
             InvFrame.Visible = false 
             return 
         end
-        PlayerNameLabel.Text = "Viewing: " .. plr.Name
+        local char = plr.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local dist = root and math.floor((Cam.CFrame.Position - root.Position).Magnitude) or 0
+        PlayerNameLabel.Text = "Viewing: " .. plr.Name .. " [" .. dist .. "m]"
 
         local character = plr.Character
         local backpack = plr:FindFirstChild("Backpack")
@@ -283,9 +344,14 @@ local function LoadFullScript()
         AimCircle.Visible = Settings.Aimbot.ShowFOV
         AimCircle.Color = Settings.Aimbot.FOVColor
 
+        SilentAimCircle.Position = center
+        SilentAimCircle.Radius = Settings.SilentAim.FOV
+        SilentAimCircle.Visible = Settings.SilentAim.ShowFOV
+        SilentAimCircle.Color = Settings.SilentAim.FOVColor
+
         for plr, data in pairs(ESPTable) do
             local char = plr.Character
-            if char and char:FindFirstChild("Head") and char:FindFirstChild("HumanoidRootPart") then
+            if char and char:FindFirstChild("Head") and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
                 local root = char.HumanoidRootPart
                 local head = char.Head
                 local rPos = Cam:WorldToViewportPoint(root.Position)
@@ -293,23 +359,22 @@ local function LoadFullScript()
 
                 if rPos.Z > 0 then
                     local vis = IsVisible(head)
-                    local color = vis and Settings.ESP.BoxColorVisible or Settings.ESP.BoxColorHidden
+                    local color = vis and Color3.fromRGB(0,255,100) or Color3.fromRGB(255,50,50)
 
-                    local height = (rPos.Y - hPos.Y) * 2.6
-                    local width = height * 0.5
+                    local height = (rPos.Y - hPos.Y) * 3.4
+                    local width = height * 0.48
 
                     data.Box.Size = Vector2.new(width, height)
-                    data.Box.Position = Vector2.new(rPos.X - width/2, hPos.Y - height*0.15)
+                    data.Box.Position = Vector2.new(rPos.X - width/2, hPos.Y - height*0.22)
                     data.Box.Color = color
                     data.Box.Visible = Settings.ESP.Boxes
 
                     local dist = math.floor((Cam.CFrame.Position - root.Position).Magnitude)
                     data.Name.Text = plr.Name .. " ["..dist.."m]"
-                    data.Name.Position = Vector2.new(rPos.X, hPos.Y - height*0.45)
+                    data.Name.Position = Vector2.new(rPos.X, hPos.Y - height*0.48)
                     data.Name.Color = color
                     data.Name.Visible = Settings.ESP.Names
 
-                    -- CLEAN GUN HOLDER (only current held)
                     local gunText = "No Gun"
                     if char:FindFirstChildWhichIsA("Tool") then
                         gunText = char:FindFirstChildWhichIsA("Tool").Name
@@ -317,40 +382,61 @@ local function LoadFullScript()
 
                     if Settings.ESP.GunHolder then
                         data.GunHolder.Text = "Holding: " .. gunText
-                        data.GunHolder.Position = Vector2.new(rPos.X, rPos.Y + height*0.6)
+                        data.GunHolder.Position = Vector2.new(rPos.X, rPos.Y + height*0.65)
                         data.GunHolder.Visible = true
                     else
                         data.GunHolder.Visible = false
                     end
 
-                    -- WATCHING
-                    local lookingAtYou = false
-                    if char:FindFirstChild("Head") then
-                        local headDir = (Cam.CFrame.Position - char.Head.Position).Unit
-                        local playerLookDir = char.Head.CFrame.LookVector
-                        if headDir:Dot(playerLookDir) > 0.75 then
-                            lookingAtYou = true
+                    if Settings.ESP.Caution then
+                        local lookingAtYou = false
+                        if char:FindFirstChild("Head") then
+                            local headDir = (Cam.CFrame.Position - char.Head.Position).Unit
+                            local playerLookDir = char.Head.CFrame.LookVector
+                            if headDir:Dot(playerLookDir) > 0.75 then
+                                lookingAtYou = true
+                            end
                         end
+                        data.Caution.Text = "CAUTION"
+                        data.Caution.Position = Vector2.new(rPos.X, hPos.Y - height*0.88)
+                        data.Caution.Visible = lookingAtYou
+                    else
+                        data.Caution.Visible = false
                     end
 
-                    if lookingAtYou and Settings.ESP.Watching then
-                        data.Watching.Text = "WATCHING"
-                        data.Watching.Position = Vector2.new(rPos.X, hPos.Y - height*0.85)
-                        data.Watching.Visible = true
+                    if Settings.ESP.HealthBar then
+                        local health = char.Humanoid.Health / char.Humanoid.MaxHealth
+                        data.HealthBar.Size = Vector2.new(4, height * health)
+                        data.HealthBar.Position = Vector2.new(data.Box.Position.X - 6, data.Box.Position.Y + height * (1 - health))
+                        data.HealthBar.Color = Color3.fromRGB(255 - (255 * health), 255 * health, 0)
+                        data.HealthBar.Visible = true
                     else
-                        data.Watching.Visible = false
+                        data.HealthBar.Visible = false
+                    end
+
+                    if Settings.ESP.Tracers then
+                        data.Tracer.From = Vector2.new(Cam.ViewportSize.X/2, Cam.ViewportSize.Y)
+                        data.Tracer.To = Vector2.new(rPos.X, rPos.Y)
+                        data.Tracer.Color = color
+                        data.Tracer.Visible = true
+                    else
+                        data.Tracer.Visible = false
                     end
                 else
                     data.Box.Visible = false
                     data.Name.Visible = false
-                    data.Watching.Visible = false
+                    data.Caution.Visible = false
                     data.GunHolder.Visible = false
+                    data.HealthBar.Visible = false
+                    data.Tracer.Visible = false
                 end
             else
                 data.Box.Visible = false
                 data.Name.Visible = false
-                data.Watching.Visible = false
+                data.Caution.Visible = false
                 data.GunHolder.Visible = false
+                data.HealthBar.Visible = false
+                data.Tracer.Visible = false
             end
         end
 
@@ -378,7 +464,7 @@ local function LoadFullScript()
         local closestAim = GetClosest()
         if closestAim then
             local vis = IsVisible(closestAim.Part)
-            local text = closestAim.Player.Name .. (vis and " VISIBLE" or " NONVISIBLE")
+            local text = closestAim.Player.Name
             local color = vis and Color3.fromRGB(0,255,100) or Color3.fromRGB(255,100,100)
 
             StatusText.Text = text
@@ -408,186 +494,299 @@ local function LoadFullScript()
     SG.ResetOnSpawn = false
 
     local Main = Instance.new("Frame", SG)
-    Main.Size = UDim2.new(0, 720, 0, 560)
-    Main.Position = UDim2.new(0.5, -360, 0.5, -280)
-    Main.BackgroundColor3 = Color3.fromRGB(15,15,15)
+    Main.Size = UDim2.new(0, 620, 0, 440)
+    Main.Position = UDim2.new(0.5, -310, 0.5, -220)
+    Main.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+    Main.BorderSizePixel = 0
     Main.Visible = true
 
-    local TitleBar = Instance.new("Frame", Main)
-    TitleBar.Size = UDim2.new(1,0,0,50)
-    TitleBar.BackgroundColor3 = Color3.fromRGB(20,20,20)
+    local TopBar = Instance.new("Frame", Main)
+    TopBar.Size = UDim2.new(1,0,0,35)
+    TopBar.BackgroundColor3 = Color3.fromRGB(25,25,25)
+    TopBar.BorderSizePixel = 0
 
-    local Title = Instance.new("TextLabel", TitleBar)
-    Title.Size = UDim2.new(1,0,1,0)
+    local Title = Instance.new("TextLabel", TopBar)
+    Title.Size = UDim2.new(0.5,0,1,0)
     Title.BackgroundTransparency = 1
     Title.Text = "AURA BLUDS"
-    Title.TextColor3 = Color3.fromRGB(255, 60, 100)
-    Title.TextSize = 20
+    Title.TextColor3 = Color3.fromRGB(255, 80, 120)
+    Title.TextSize = 15
     Title.Font = Enum.Font.GothamBold
+    Title.TextXAlignment = Enum.TextXAlignment.Left
 
-    local Sidebar = Instance.new("ScrollingFrame", Main)
-    Sidebar.Size = UDim2.new(0, 180, 1, -50)
-    Sidebar.Position = UDim2.new(0,0,0,50)
-    Sidebar.BackgroundColor3 = Color3.fromRGB(18,18,18)
-    Sidebar.ScrollBarThickness = 4
+    local Tabs = Instance.new("Frame", Main)
+    Tabs.Size = UDim2.new(1,0,0,35)
+    Tabs.Position = UDim2.new(0,0,0,35)
+    Tabs.BackgroundColor3 = Color3.fromRGB(22,22,22)
+    Tabs.BorderSizePixel = 0
 
-    local Content = Instance.new("Frame", Main)
-    Content.Size = UDim2.new(1, -180, 1, -50)
-    Content.Position = UDim2.new(0,180,0,50)
-    Content.BackgroundColor3 = Color3.fromRGB(22,22,22)
+    local CombatTab = Instance.new("TextButton", Tabs)
+    CombatTab.Size = UDim2.new(0.25,0,1,0)
+    CombatTab.BackgroundTransparency = 1
+    CombatTab.Text = "Combat"
+    CombatTab.TextColor3 = Color3.fromRGB(255, 80, 120)
+    CombatTab.TextSize = 13
+    CombatTab.Font = Enum.Font.Gotham
 
-    local tabFrames = {}
+    local RagebotTab = Instance.new("TextButton", Tabs)
+    RagebotTab.Size = UDim2.new(0.25,0,1,0)
+    RagebotTab.Position = UDim2.new(0.25,0,0,0)
+    RagebotTab.BackgroundTransparency = 1
+    RagebotTab.Text = "Ragebot"
+    RagebotTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RagebotTab.TextSize = 13
+    RagebotTab.Font = Enum.Font.Gotham
 
-    local function CreateTabFrame(name)
-        local f = Instance.new("ScrollingFrame", Content)
-        f.Size = UDim2.new(1,0,1,0)
-        f.BackgroundTransparency = 1
-        f.ScrollBarThickness = 6
-        f.Visible = false
-        tabFrames[name] = f
-        return f
-    end
+    local VisualsTab = Instance.new("TextButton", Tabs)
+    VisualsTab.Size = UDim2.new(0.25,0,1,0)
+    VisualsTab.Position = UDim2.new(0.5,0,0,0)
+    VisualsTab.BackgroundTransparency = 1
+    VisualsTab.Text = "Visuals"
+    VisualsTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+    VisualsTab.TextSize = 13
+    VisualsTab.Font = Enum.Font.Gotham
 
-    local legitTab = CreateTabFrame("LegitBot")
-    local visualsTab = CreateTabFrame("Visuals")
-    local exploitsTab = CreateTabFrame("Exploits")
+    local ExploitsTab = Instance.new("TextButton", Tabs)
+    ExploitsTab.Size = UDim2.new(0.25,0,1,0)
+    ExploitsTab.Position = UDim2.new(0.75,0,0,0)
+    ExploitsTab.BackgroundTransparency = 1
+    ExploitsTab.Text = "Exploits"
+    ExploitsTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ExploitsTab.TextSize = 13
+    ExploitsTab.Font = Enum.Font.Gotham
 
-    local function SwitchTab(tabName)
-        for _, f in pairs(tabFrames) do f.Visible = false end
-        tabFrames[tabName].Visible = true
-    end
+    local ContentFrame = Instance.new("Frame", Main)
+    ContentFrame.Size = UDim2.new(1,0,1,-70)
+    ContentFrame.Position = UDim2.new(0,0,0,70)
+    ContentFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
+    ContentFrame.BorderSizePixel = 0
 
-    local function CreateSidebarBtn(text, y, tabName)
-        local btn = Instance.new("TextButton", Sidebar)
-        btn.Size = UDim2.new(1,-10,0,45)
-        btn.Position = UDim2.new(0,5,0,y)
-        btn.BackgroundColor3 = Color3.fromRGB(30,30,30)
-        btn.Text = text
-        btn.TextColor3 = Color3.new(1,1,1)
-        btn.TextSize = 14
-        btn.Font = Enum.Font.Gotham
-        btn.MouseButton1Click:Connect(function() SwitchTab(tabName) end)
-    end
+    local CombatFrame = Instance.new("ScrollingFrame", ContentFrame)
+    CombatFrame.Size = UDim2.new(1,0,1,0)
+    CombatFrame.BackgroundTransparency = 1
+    CombatFrame.ScrollBarThickness = 6
+    CombatFrame.Visible = true
 
-    CreateSidebarBtn("LegitBot", 10, "LegitBot")
-    CreateSidebarBtn("Visuals", 65, "Visuals")
-    CreateSidebarBtn("Exploits", 120, "Exploits")
+    local RagebotFrame = Instance.new("ScrollingFrame", ContentFrame)
+    RagebotFrame.Size = UDim2.new(1,0,1,0)
+    RagebotFrame.BackgroundTransparency = 1
+    RagebotFrame.ScrollBarThickness = 6
+    RagebotFrame.Visible = false
+
+    local VisualsFrame = Instance.new("ScrollingFrame", ContentFrame)
+    VisualsFrame.Size = UDim2.new(1,0,1,0)
+    VisualsFrame.BackgroundTransparency = 1
+    VisualsFrame.ScrollBarThickness = 6
+    VisualsFrame.Visible = false
+
+    local ExploitsFrame = Instance.new("ScrollingFrame", ContentFrame)
+    ExploitsFrame.Size = UDim2.new(1,0,1,0)
+    ExploitsFrame.BackgroundTransparency = 1
+    ExploitsFrame.ScrollBarThickness = 6
+    ExploitsFrame.Visible = false
 
     local function AddToggle(parent, y, text, default, callback)
         local btn = Instance.new("TextButton", parent)
-        btn.Size = UDim2.new(0.9,0,0,40)
-        btn.Position = UDim2.new(0.05,0,0,y)
-        btn.BackgroundColor3 = default and Color3.fromRGB(255,60,100) or Color3.fromRGB(40,40,40)
+        btn.Size = UDim2.new(0.92,0,0,32)
+        btn.Position = UDim2.new(0.04,0,0,y)
+        btn.BackgroundColor3 = default and Color3.fromRGB(255, 80, 120) or Color3.fromRGB(35,35,35)
         btn.Text = text
         btn.TextColor3 = Color3.new(1,1,1)
-        btn.TextSize = 13
+        btn.TextSize = 12
         btn.Font = Enum.Font.Gotham
         btn.MouseButton1Click:Connect(function()
             default = not default
-            btn.BackgroundColor3 = default and Color3.fromRGB(255,60,100) or Color3.fromRGB(40,40,40)
+            btn.BackgroundColor3 = default and Color3.fromRGB(255, 80, 120) or Color3.fromRGB(35,35,35)
             callback(default)
         end)
     end
 
-    -- LegitBot
-    AddToggle(legitTab, 20, "Aimbot Enabled", true, function(v) Settings.Aimbot.Enabled = v end)
-    AddToggle(legitTab, 70, "Show FOV", true, function(v) Settings.Aimbot.ShowFOV = v end)
-    AddToggle(legitTab, 120, "Visibility Check", true, function(v) Settings.Aimbot.VisibilityCheck = v end)
+    local function AddSlider(parent, y, text, min, max, default, callback, step)
+        step = step or 5
+        local label = Instance.new("TextLabel", parent)
+        label.Size = UDim2.new(0.92,0,0,22)
+        label.Position = UDim2.new(0.04,0,0,y)
+        label.BackgroundTransparency = 1
+        label.Text = text .. ": " .. default
+        label.TextColor3 = Color3.new(1,1,1)
+        label.TextSize = 12
+        label.Font = Enum.Font.Gotham
 
-    -- Smoothness + FOV Slider
-    local smoothLabel = Instance.new("TextLabel", legitTab)
-    smoothLabel.Size = UDim2.new(0.9,0,0,25) smoothLabel.Position = UDim2.new(0.05,0,0,175)
-    smoothLabel.BackgroundTransparency = 1 smoothLabel.Text = "Smoothness: " .. Settings.Aimbot.Smooth smoothLabel.TextColor3 = Color3.new(1,1,1) smoothLabel.TextSize = 13
+        local minus = Instance.new("TextButton", parent)
+        minus.Size = UDim2.new(0.2,0,0,28)
+        minus.Position = UDim2.new(0.04,0,0,y+25)
+        minus.Text = "-"
+        minus.BackgroundColor3 = Color3.fromRGB(50,50,50)
+        minus.TextColor3 = Color3.new(1,1,1)
+        minus.MouseButton1Click:Connect(function()
+            default = math.clamp(default - step, min, max)
+            label.Text = text .. ": " .. default
+            callback(default)
+        end)
 
-    local smoothMinus = Instance.new("TextButton", legitTab) smoothMinus.Size = UDim2.new(0.4,0,0,30) smoothMinus.Position = UDim2.new(0.05,0,0,205)
-    smoothMinus.Text = "-0.5" smoothMinus.BackgroundColor3 = Color3.fromRGB(60,60,60) smoothMinus.TextSize = 13
-    smoothMinus.MouseButton1Click:Connect(function()
-        Settings.Aimbot.Smooth = math.clamp(Settings.Aimbot.Smooth - 0.5, 1, 20)
-        smoothLabel.Text = "Smoothness: " .. Settings.Aimbot.Smooth
+        local plus = Instance.new("TextButton", parent)
+        plus.Size = UDim2.new(0.2,0,0,28)
+        plus.Position = UDim2.new(0.75,0,0,y+25)
+        plus.Text = "+"
+        plus.BackgroundColor3 = Color3.fromRGB(50,50,50)
+        plus.TextColor3 = Color3.new(1,1,1)
+        plus.MouseButton1Click:Connect(function()
+            default = math.clamp(default + step, min, max)
+            label.Text = text .. ": " .. default
+            callback(default)
+        end)
+    end
+
+    -- Combat Tab
+    AddToggle(CombatFrame, 20, "Aimbot Enabled", false, function(v) Settings.Aimbot.Enabled = v end)
+    AddToggle(CombatFrame, 65, "Show FOV", false, function(v) Settings.Aimbot.ShowFOV = v end)
+    AddToggle(CombatFrame, 110, "Visibility Check", true, function(v) Settings.Aimbot.VisibilityCheck = v end)
+
+    local targetLabel = Instance.new("TextLabel", CombatFrame)
+    targetLabel.Size = UDim2.new(0.92,0,0,22)
+    targetLabel.Position = UDim2.new(0.04,0,0,160)
+    targetLabel.BackgroundTransparency = 1
+    targetLabel.Text = "Aim Target: " .. Settings.Aimbot.TargetPart
+    targetLabel.TextColor3 = Color3.new(1,1,1)
+    targetLabel.TextSize = 12
+    targetLabel.Font = Enum.Font.Gotham
+
+    local targets = {"Head", "UpperTorso", "HumanoidRootPart", "Closest"}
+    local currentTarget = 1
+
+    local targetBtn = Instance.new("TextButton", CombatFrame)
+    targetBtn.Size = UDim2.new(0.92,0,0,32)
+    targetBtn.Position = UDim2.new(0.04,0,0,190)
+    targetBtn.Text = "Change Target"
+    targetBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+    targetBtn.TextColor3 = Color3.new(1,1,1)
+    targetBtn.TextSize = 12
+    targetBtn.MouseButton1Click:Connect(function()
+        currentTarget = currentTarget % #targets + 1
+        Settings.Aimbot.TargetPart = targets[currentTarget]
+        targetLabel.Text = "Aim Target: " .. Settings.Aimbot.TargetPart
     end)
 
-    local smoothPlus = Instance.new("TextButton", legitTab) smoothPlus.Size = UDim2.new(0.4,0,0,30) smoothPlus.Position = UDim2.new(0.55,0,0,205)
-    smoothPlus.Text = "+0.5" smoothPlus.BackgroundColor3 = Color3.fromRGB(60,60,60) smoothPlus.TextSize = 13
-    smoothPlus.MouseButton1Click:Connect(function()
-        Settings.Aimbot.Smooth = math.clamp(Settings.Aimbot.Smooth + 0.5, 1, 20)
-        smoothLabel.Text = "Smoothness: " .. Settings.Aimbot.Smooth
-    end)
+    AddSlider(CombatFrame, 240, "Smoothness", 1, 20, Settings.Aimbot.Smooth, function(v) Settings.Aimbot.Smooth = v end, 1)
+    AddSlider(CombatFrame, 295, "FOV Radius", 30, 500, Settings.Aimbot.FOV, function(v) Settings.Aimbot.FOV = v end)
 
-    local fovLabel = Instance.new("TextLabel", legitTab)
-    fovLabel.Size = UDim2.new(0.9,0,0,25) fovLabel.Position = UDim2.new(0.05,0,0,245)
-    fovLabel.BackgroundTransparency = 1 fovLabel.Text = "FOV Size: " .. Settings.Aimbot.FOV fovLabel.TextColor3 = Color3.new(1,1,1) fovLabel.TextSize = 13
+    -- Ragebot Tab
+    AddToggle(RagebotFrame, 20, "Silent Aim", false, function(v) Settings.SilentAim.Enabled = v end)
+    AddToggle(RagebotFrame, 65, "Show Silent FOV", false, function(v) Settings.SilentAim.ShowFOV = v end)
+    AddSlider(RagebotFrame, 110, "Silent Hit Chance", 0, 100, Settings.SilentAim.HitChance, function(v) Settings.SilentAim.HitChance = v end)
+    AddSlider(RagebotFrame, 170, "Silent FOV", 30, 500, Settings.SilentAim.FOV, function(v) Settings.SilentAim.FOV = v end)
 
-    local fovMinus = Instance.new("TextButton", legitTab) fovMinus.Size = UDim2.new(0.4,0,0,30) fovMinus.Position = UDim2.new(0.05,0,0,275)
-    fovMinus.Text = "-10" fovMinus.BackgroundColor3 = Color3.fromRGB(60,60,60) fovMinus.TextSize = 13
-    fovMinus.MouseButton1Click:Connect(function()
-        Settings.Aimbot.FOV = math.clamp(Settings.Aimbot.FOV - 10, 30, 300)
-        fovLabel.Text = "FOV Size: " .. Settings.Aimbot.FOV
-    end)
+    -- Visuals Tab
+    AddToggle(VisualsFrame, 20, "ESP Boxes", true, function(v) Settings.ESP.Boxes = v end)
+    AddToggle(VisualsFrame, 65, "ESP Names", true, function(v) Settings.ESP.Names = v end)
+    AddToggle(VisualsFrame, 110, "Health Bar", true, function(v) Settings.ESP.HealthBar = v end)
+    AddToggle(VisualsFrame, 155, "CAUTION", true, function(v) Settings.ESP.Caution = v end)
+    AddToggle(VisualsFrame, 200, "Gun Holder", true, function(v) Settings.ESP.GunHolder = v end)
+    AddToggle(VisualsFrame, 245, "Tracers", true, function(v) Settings.ESP.Tracers = v end)
+    AddToggle(VisualsFrame, 290, "Inventory Viewer", false, function(v) Settings.Exploits.ShowInventory = v end)
 
-    local fovPlus = Instance.new("TextButton", legitTab) fovPlus.Size = UDim2.new(0.4,0,0,30) fovPlus.Position = UDim2.new(0.55,0,0,275)
-    fovPlus.Text = "+10" fovPlus.BackgroundColor3 = Color3.fromRGB(60,60,60) fovPlus.TextSize = 13
-    fovPlus.MouseButton1Click:Connect(function()
-        Settings.Aimbot.FOV = math.clamp(Settings.Aimbot.FOV + 10, 30, 300)
-        fovLabel.Text = "FOV Size: " .. Settings.Aimbot.FOV
-    end)
+    -- Exploits Tab
+    AddToggle(ExploitsFrame, 20, "Speed Hack", false, function(v) Settings.Exploits.SpeedHack = v if v then StartSpeedHack() else StopSpeedHack() end end)
+    AddSlider(ExploitsFrame, 70, "Speed", 20, 200, Settings.Exploits.Speed, function(v) Settings.Exploits.Speed = v end)
+    AddToggle(ExploitsFrame, 140, "Full Bright", false, function(v) Settings.Exploits.FullBright = v ToggleFullBright(v) end)
+    AddToggle(ExploitsFrame, 190, "Spider Man", false, function(v) Settings.Exploits.SpiderMan = v if v then StartSpiderMan() else StopSpiderMan() end end)
+    AddToggle(ExploitsFrame, 240, "Big Head", false, function(v) Settings.Exploits.BigHead = v ToggleBigHead(v) end)
 
-    -- Big Head Slider
-    local bigHeadLabel = Instance.new("TextLabel", exploitsTab)
-    bigHeadLabel.Size = UDim2.new(0.9,0,0,25) bigHeadLabel.Position = UDim2.new(0.05,0,0,310)
-    bigHeadLabel.BackgroundTransparency = 1 bigHeadLabel.Text = "Big Head Size: " .. Settings.Exploits.BigHeadSize bigHeadLabel.TextColor3 = Color3.new(1,1,1) bigHeadLabel.TextSize = 13
+    local bigHeadLabel = Instance.new("TextLabel", ExploitsFrame)
+    bigHeadLabel.Size = UDim2.new(0.92,0,0,22)
+    bigHeadLabel.Position = UDim2.new(0.04,0,0,280)
+    bigHeadLabel.BackgroundTransparency = 1 bigHeadLabel.Text = "Big Head Size: " .. Settings.Exploits.BigHeadSize bigHeadLabel.TextColor3 = Color3.new(1,1,1) bigHeadLabel.TextSize = 12
 
-    local bigHeadMinus = Instance.new("TextButton", exploitsTab) bigHeadMinus.Size = UDim2.new(0.4,0,0,30) bigHeadMinus.Position = UDim2.new(0.05,0,0,340)
-    bigHeadMinus.Text = "-0.5" bigHeadMinus.BackgroundColor3 = Color3.fromRGB(60,60,60) bigHeadMinus.TextSize = 13
+    local bigHeadMinus = Instance.new("TextButton", ExploitsFrame) bigHeadMinus.Size = UDim2.new(0.4,0,0,28) bigHeadMinus.Position = UDim2.new(0.04,0,0,310)
+    bigHeadMinus.Text = "-0.5" bigHeadMinus.BackgroundColor3 = Color3.fromRGB(50,50,50)
+    bigHeadMinus.TextColor3 = Color3.new(1,1,1)
     bigHeadMinus.MouseButton1Click:Connect(function()
         Settings.Exploits.BigHeadSize = math.clamp(Settings.Exploits.BigHeadSize - 0.5, 1, 15)
         bigHeadLabel.Text = "Big Head Size: " .. Settings.Exploits.BigHeadSize
     end)
 
-    local bigHeadPlus = Instance.new("TextButton", exploitsTab) bigHeadPlus.Size = UDim2.new(0.4,0,0,30) bigHeadPlus.Position = UDim2.new(0.55,0,0,340)
-    bigHeadPlus.Text = "+0.5" bigHeadPlus.BackgroundColor3 = Color3.fromRGB(60,60,60) bigHeadPlus.TextSize = 13
+    local bigHeadPlus = Instance.new("TextButton", ExploitsFrame) bigHeadPlus.Size = UDim2.new(0.4,0,0,28) bigHeadPlus.Position = UDim2.new(0.55,0,0,310)
+    bigHeadPlus.Text = "+0.5" bigHeadPlus.BackgroundColor3 = Color3.fromRGB(50,50,50)
+    bigHeadPlus.TextColor3 = Color3.new(1,1,1)
     bigHeadPlus.MouseButton1Click:Connect(function()
         Settings.Exploits.BigHeadSize = math.clamp(Settings.Exploits.BigHeadSize + 0.5, 1, 15)
         bigHeadLabel.Text = "Big Head Size: " .. Settings.Exploits.BigHeadSize
     end)
 
-    AddToggle(exploitsTab, 380, "Big Head", false, function(v) Settings.Exploits.BigHead = v ToggleBigHead(v) end)
+    local spiderKeyLabel = Instance.new("TextLabel", ExploitsFrame)
+    spiderKeyLabel.Size = UDim2.new(0.92,0,0,22)
+    spiderKeyLabel.Position = UDim2.new(0.04,0,0,360)
+    spiderKeyLabel.BackgroundTransparency = 1
+    spiderKeyLabel.Text = "Spider Key: " .. CurrentSpiderKey.Name
+    spiderKeyLabel.TextColor3 = Color3.new(1,1,1)
+    spiderKeyLabel.TextSize = 12
 
-    -- Visuals Tab
-    AddToggle(visualsTab, 20, "ESP Boxes", true, function(v) Settings.ESP.Boxes = v end)
-    AddToggle(visualsTab, 70, "ESP Names", true, function(v) Settings.ESP.Names = v end)
-    AddToggle(visualsTab, 120, "WATCHING", true, function(v) Settings.ESP.Watching = v end)
-    AddToggle(visualsTab, 170, "Gun Holder", true, function(v) Settings.ESP.GunHolder = v end)
-
-    -- Exploits Tab
-    AddToggle(exploitsTab, 20, "Speed Hack", false, function(v) Settings.Exploits.SpeedHack = v end)
-    AddToggle(exploitsTab, 70, "Inventory Viewer", false, function(v) Settings.Exploits.ShowInventory = v end)
-    AddToggle(exploitsTab, 120, "Full Bright", false, function(v) Settings.Exploits.FullBright = v ToggleFullBright(v) end)
-    AddToggle(exploitsTab, 170, "Spider Man", false, function(v) Settings.Exploits.SpiderMan = v if v then StartSpiderMan() else StopSpiderMan() end end)
-
-    -- Spider Keybind
-    local keyLabel = Instance.new("TextLabel", exploitsTab)
-    keyLabel.Size = UDim2.new(0.9,0,0,25) keyLabel.Position = UDim2.new(0.05,0,0,230)
-    keyLabel.BackgroundTransparency = 1 keyLabel.Text = "Spider Key: " .. CurrentSpiderKey.Name keyLabel.TextColor3 = Color3.new(1,1,1) keyLabel.TextSize = 13
-
-    local changeKeyBtn = Instance.new("TextButton", exploitsTab)
-    changeKeyBtn.Size = UDim2.new(0.9,0,0,35) changeKeyBtn.Position = UDim2.new(0.05,0,0,260)
-    changeKeyBtn.Text = "Change Spider Key" changeKeyBtn.BackgroundColor3 = Color3.fromRGB(60,60,60) changeKeyBtn.TextSize = 13
+    local changeKeyBtn = Instance.new("TextButton", ExploitsFrame)
+    changeKeyBtn.Size = UDim2.new(0.92,0,0,32)
+    changeKeyBtn.Position = UDim2.new(0.04,0,0,390)
+    changeKeyBtn.Text = "Change Spider Key"
+    changeKeyBtn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+    changeKeyBtn.TextColor3 = Color3.new(1,1,1)
+    changeKeyBtn.TextSize = 12
 
     local listening = false
     changeKeyBtn.MouseButton1Click:Connect(function()
-        listening = true changeKeyBtn.Text = "Press any key..."
+        listening = true
+        changeKeyBtn.Text = "Press any key..."
     end)
 
     UIS.InputBegan:Connect(function(i, gp)
         if listening and not gp then
             CurrentSpiderKey = i.KeyCode
-            keyLabel.Text = "Spider Key: " .. CurrentSpiderKey.Name
+            spiderKeyLabel.Text = "Spider Key: " .. CurrentSpiderKey.Name
             changeKeyBtn.Text = "Change Spider Key"
             listening = false
         end
     end)
 
-    SwitchTab("LegitBot")
+    CombatTab.MouseButton1Click:Connect(function()
+        CombatFrame.Visible = true
+        RagebotFrame.Visible = false
+        VisualsFrame.Visible = false
+        ExploitsFrame.Visible = false
+        CombatTab.TextColor3 = Color3.fromRGB(255, 80, 120)
+        RagebotTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+        VisualsTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ExploitsTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end)
+
+    RagebotTab.MouseButton1Click:Connect(function()
+        CombatFrame.Visible = false
+        RagebotFrame.Visible = true
+        VisualsFrame.Visible = false
+        ExploitsFrame.Visible = false
+        CombatTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+        RagebotTab.TextColor3 = Color3.fromRGB(255, 80, 120)
+        VisualsTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ExploitsTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end)
+
+    VisualsTab.MouseButton1Click:Connect(function()
+        CombatFrame.Visible = false
+        RagebotFrame.Visible = false
+        VisualsFrame.Visible = true
+        ExploitsFrame.Visible = false
+        CombatTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+        RagebotTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+        VisualsTab.TextColor3 = Color3.fromRGB(255, 80, 120)
+        ExploitsTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end)
+
+    ExploitsTab.MouseButton1Click:Connect(function()
+        CombatFrame.Visible = false
+        RagebotFrame.Visible = false
+        VisualsFrame.Visible = false
+        ExploitsFrame.Visible = true
+        CombatTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+        RagebotTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+        VisualsTab.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ExploitsTab.TextColor3 = Color3.fromRGB(255, 80, 120)
+    end)
 
     UIS.InputBegan:Connect(function(i)
         if i.KeyCode == Enum.KeyCode.RightShift then
@@ -595,7 +794,7 @@ local function LoadFullScript()
         end
     end)
 
-    print("✅ Full Script Loaded! Press RightShift")
+    print("✅ Aura Bluds Loaded! Press RightShift")
 end
 
 -- Key System
@@ -605,43 +804,43 @@ keyGui.ResetOnSpawn = false
 keyGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
 
 local frame = Instance.new("Frame", keyGui)
-frame.Size = UDim2.new(0, 320, 0, 200)
-frame.Position = UDim2.new(0.5, -160, 0.5, -100)
-frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+frame.Size = UDim2.new(0, 300, 0, 180)
+frame.Position = UDim2.new(0.5, -150, 0.5, -90)
+frame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
 frame.BorderSizePixel = 0
 
 local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1, 0, 0, 50)
+title.Size = UDim2.new(1, 0, 0, 45)
 title.BackgroundTransparency = 1
 title.Text = "AURA BLUDS"
-title.TextColor3 = Color3.fromRGB(255, 60, 100)
-title.TextSize = 22
+title.TextColor3 = Color3.fromRGB(255, 80, 120)
+title.TextSize = 20
 title.Font = Enum.Font.GothamBold
 
 local subtitle = Instance.new("TextLabel", frame)
-subtitle.Size = UDim2.new(1, 0, 0, 30)
-subtitle.Position = UDim2.new(0,0,0,50)
+subtitle.Size = UDim2.new(1, 0, 0, 25)
+subtitle.Position = UDim2.new(0,0,0,45)
 subtitle.BackgroundTransparency = 1
 subtitle.Text = "Enter Key to Continue"
 subtitle.TextColor3 = Color3.fromRGB(180, 180, 180)
-subtitle.TextSize = 14
+subtitle.TextSize = 13
 
 local input = Instance.new("TextBox", frame)
-input.Size = UDim2.new(0.8, 0, 0, 45)
-input.Position = UDim2.new(0.1, 0, 0, 85)
+input.Size = UDim2.new(0.85, 0, 0, 40)
+input.Position = UDim2.new(0.075, 0, 0, 75)
 input.PlaceholderText = "Enter Key Here"
 input.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 input.TextColor3 = Color3.new(1,1,1)
-input.TextSize = 18
+input.TextSize = 16
 input.Font = Enum.Font.Gotham
 
 local submit = Instance.new("TextButton", frame)
-submit.Size = UDim2.new(0.8, 0, 0, 45)
-submit.Position = UDim2.new(0.1, 0, 0, 140)
-submit.BackgroundColor3 = Color3.fromRGB(255, 60, 100)
+submit.Size = UDim2.new(0.85, 0, 0, 40)
+submit.Position = UDim2.new(0.075, 0, 0, 125)
+submit.BackgroundColor3 = Color3.fromRGB(255, 80, 120)
 submit.Text = "Submit Key"
 submit.TextColor3 = Color3.new(1,1,1)
-submit.TextSize = 16
+submit.TextSize = 15
 submit.Font = Enum.Font.GothamBold
 
 submit.MouseButton1Click:Connect(function()
@@ -651,7 +850,7 @@ submit.MouseButton1Click:Connect(function()
         LoadFullScript()
     else
         input.Text = ""
-        input.PlaceholderText = "Wrong Key! add 2yrc on discord "
+        input.PlaceholderText = "Wrong Key!"
         task.wait(1.5)
         input.PlaceholderText = "Enter Key Here"
     end
