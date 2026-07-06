@@ -1,5 +1,5 @@
--- 🔥 AURA BLUDS v2.9 - Desert Storm | Clean Gun Holder
-local ScriptVersion = "2.9-CLEAN-GUN"
+-- 🔥 AURA BLUDS v2.9 - Desert Storm | Big Head + All Features
+local ScriptVersion = "2.9-BIG-HEAD"
 
 print("🔥 AURA BLUDS v"..ScriptVersion.." loading... Key: 123")
 
@@ -15,13 +15,14 @@ local function LoadFullScript()
     local Settings = {
         Aimbot = { Enabled = true, Smooth = 4, FOV = 140, ShowFOV = true, TargetPart = "Head", VisibilityCheck = true, FOVColor = Color3.fromRGB(255, 80, 120) },
         ESP = { Boxes = true, Names = true, VisibilityCheck = true, BoxColorVisible = Color3.fromRGB(0,255,100), BoxColorHidden = Color3.fromRGB(255,50,50), Watching = true, GunHolder = true },
-        Exploits = { SpeedHack = false, Speed = 50, ShowInventory = false, FullBright = false, SpiderMan = false }
+        Exploits = { SpeedHack = false, Speed = 50, ShowInventory = false, FullBright = false, SpiderMan = false, BigHead = false, BigHeadSize = 5 }
     }
 
     local ESPTable = {}
     local FullBrightConnection = nil
     local CurrentSpiderKey = Enum.KeyCode.E
     local SpiderConnection = nil
+    local BigHeadConnections = {}
 
     local StatusBar = Drawing.new("Square")
     StatusBar.Thickness = 1 StatusBar.Filled = true StatusBar.Color = Color3.fromRGB(0,0,0) StatusBar.Transparency = 0.6 StatusBar.Visible = false
@@ -112,6 +113,38 @@ local function LoadFullScript()
     local function StopSpiderMan()
         if SpiderConnection then SpiderConnection:Disconnect() SpiderConnection = nil end
         local char = LP.Character if char and char:FindFirstChild("Humanoid") then char.Humanoid.PlatformStand = false end
+    end
+
+    -- BIG HEAD
+    local function ToggleBigHead(state)
+        for _, conn in pairs(BigHeadConnections) do conn:Disconnect() end
+        BigHeadConnections = {}
+
+        if not state then
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr.Character and plr.Character:FindFirstChild("Head") then
+                    local head = plr.Character.Head
+                    head.Size = Vector3.new(2,1,1) -- Reset
+                end
+            end
+            return
+        end
+
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LP then
+                local conn = plr.CharacterAdded:Connect(function(char)
+                    wait(0.5)
+                    if char:FindFirstChild("Head") then
+                        char.Head.Size = Vector3.new(Settings.Exploits.BigHeadSize, Settings.Exploits.BigHeadSize, Settings.Exploits.BigHeadSize)
+                    end
+                end)
+                table.insert(BigHeadConnections, conn)
+
+                if plr.Character and plr.Character:FindFirstChild("Head") then
+                    plr.Character.Head.Size = Vector3.new(Settings.Exploits.BigHeadSize, Settings.Exploits.BigHeadSize, Settings.Exploits.BigHeadSize)
+                end
+            end
+        end
     end
 
     -- FULL INVENTORY VIEWER
@@ -497,6 +530,27 @@ local function LoadFullScript()
         Settings.Aimbot.FOV = math.clamp(Settings.Aimbot.FOV + 10, 30, 300)
         fovLabel.Text = "FOV Size: " .. Settings.Aimbot.FOV
     end)
+
+    -- Big Head Slider
+    local bigHeadLabel = Instance.new("TextLabel", exploitsTab)
+    bigHeadLabel.Size = UDim2.new(0.9,0,0,25) bigHeadLabel.Position = UDim2.new(0.05,0,0,310)
+    bigHeadLabel.BackgroundTransparency = 1 bigHeadLabel.Text = "Big Head Size: " .. Settings.Exploits.BigHeadSize bigHeadLabel.TextColor3 = Color3.new(1,1,1) bigHeadLabel.TextSize = 13
+
+    local bigHeadMinus = Instance.new("TextButton", exploitsTab) bigHeadMinus.Size = UDim2.new(0.4,0,0,30) bigHeadMinus.Position = UDim2.new(0.05,0,0,340)
+    bigHeadMinus.Text = "-0.5" bigHeadMinus.BackgroundColor3 = Color3.fromRGB(60,60,60) bigHeadMinus.TextSize = 13
+    bigHeadMinus.MouseButton1Click:Connect(function()
+        Settings.Exploits.BigHeadSize = math.clamp(Settings.Exploits.BigHeadSize - 0.5, 1, 15)
+        bigHeadLabel.Text = "Big Head Size: " .. Settings.Exploits.BigHeadSize
+    end)
+
+    local bigHeadPlus = Instance.new("TextButton", exploitsTab) bigHeadPlus.Size = UDim2.new(0.4,0,0,30) bigHeadPlus.Position = UDim2.new(0.55,0,0,340)
+    bigHeadPlus.Text = "+0.5" bigHeadPlus.BackgroundColor3 = Color3.fromRGB(60,60,60) bigHeadPlus.TextSize = 13
+    bigHeadPlus.MouseButton1Click:Connect(function()
+        Settings.Exploits.BigHeadSize = math.clamp(Settings.Exploits.BigHeadSize + 0.5, 1, 15)
+        bigHeadLabel.Text = "Big Head Size: " .. Settings.Exploits.BigHeadSize
+    end)
+
+    AddToggle(exploitsTab, 380, "Big Head", false, function(v) Settings.Exploits.BigHead = v ToggleBigHead(v) end)
 
     -- Visuals Tab
     AddToggle(visualsTab, 20, "ESP Boxes", true, function(v) Settings.ESP.Boxes = v end)
