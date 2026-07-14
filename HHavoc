@@ -1,0 +1,566 @@
+print("🔥 FULL Havoc Loaded! Rogue Edition - Loot + Toggle Fixed")
+local Players = game:GetService("Players")
+local RS = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local Cam = workspace.CurrentCamera
+local LP = Players.LocalPlayer
+local Mouse = LP:GetMouse()
+local Settings = {
+    Aimbot = { Enabled = true, Smooth = 6, FOV = 120, ShowFOV = true, TargetPart = "Head" },
+    ESP = { Players = true, Boxes = true, Names = true, Health = true, Tracers = true, Distance = 800, Chams = false },
+    Loot = { Enabled = true, Distance = 600 },
+    NPC = { Enabled = true, Distance = 700 },
+    FullBright = { Enabled = false },
+    VisibleCheck = { Enabled = true }
+}
+local PlayerESPTable = {}
+local LootNPCESPTable = {}
+local FOVCircle = nil
+local VisibleBar = nil
+local ChamHighlights = {}
+local OriginalLighting = {}
+local NPCFolderCache = nil
+local lastLootNPCUpdate = 0
+
+-- Lighting (unchanged)
+local function SaveOriginalLighting()
+    OriginalLighting.Brightness = Lighting.Brightness
+    OriginalLighting.ClockTime = Lighting.ClockTime
+    OriginalLighting.FogEnd = Lighting.FogEnd
+    OriginalLighting.GlobalShadows = Lighting.GlobalShadows
+    OriginalLighting.Ambient = Lighting.Ambient
+end
+local function ToggleFullBright(enable)
+    if enable then
+        if not OriginalLighting.Brightness then SaveOriginalLighting() end
+        Lighting.Brightness = 3
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 100000
+        Lighting.GlobalShadows = false
+        Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+        Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+    else
+        if OriginalLighting.Brightness then
+            Lighting.Brightness = OriginalLighting.Brightness
+            Lighting.ClockTime = OriginalLighting.ClockTime
+            Lighting.FogEnd = OriginalLighting.FogEnd
+            Lighting.GlobalShadows = OriginalLighting.GlobalShadows
+            Lighting.Ambient = OriginalLighting.Ambient
+        end
+    end
+end
+local function FindNPCFolder()
+    if NPCFolderCache and NPCFolderCache.Parent then return NPCFolderCache end
+    for _, v in pairs(workspace:GetDescendants()) do
+        if (v.Name == "NPCs" or v.Name:find("Scav")) and (v:IsA("Folder") or v:IsA("Model")) then
+            NPCFolderCache = v
+            return v
+        end
+    end
+    return nil
+end
+local function FindLootFolder()
+    local buildings = workspace:FindFirstChild("Buildings")
+    if buildings then return buildings:FindFirstChild("Loots") end
+    return workspace:FindFirstChild("Loots")
+end
+local function CreateESP(table, obj, color, isLoot, playerName)
+    if table[obj] then return end
+    local Box = Drawing.new("Square") Box.Thickness = 2 Box.Filled = false Box.Visible = false
+    local Name = Drawing.new("Text") Name.Size = 13 Name.Center = true Name.Outline = true Name.Visible = false
+    local HealthBar = Drawing.new("Square") HealthBar.Filled = true HealthBar.Thickness = 1 HealthBar.Visible = false
+    local Tracer = Drawing.new("Line") Tracer.Thickness = 2 Tracer.Visible = false
+    local Holding = Drawing.new("Text") Holding.Size = 12 Holding.Center = true Holding.Outline = true Holding.Visible = false
+   
+    table[obj] = {
+        Box = Box, Name = Name, HealthBar = HealthBar, Tracer = Tracer, Holding = Holding,
+        Color = color, Obj = obj, IsLoot = isLoot or false, PlayerName = playerName
+    }
+end
+local function ApplyChams(character, enabled)
+    if not character then return end
+    if ChamHighlights[character] then
+        ChamHighlights[character].Enabled = enabled
+        return
+    end
+    if enabled then
+        local highlight = Instance.new("Highlight")
+        highlight.Adornee = character
+        highlight.FillColor = Color3.fromRGB(80, 180, 255)
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.FillTransparency = 0.5
+        highlight.OutlineTransparency = 0
+        highlight.Parent = character
+        ChamHighlights[character] = highlight
+    end
+end
+local function CleanupOldESP(table)
+    for obj, data in pairs(table) do
+        if not obj or not obj.Parent then
+            pcall(function()
+                for _, v in pairs(data) do
+                    if typeof(v) == "Instance" and v.Remove then v:Remove() end
+                end
+            end)
+            pcall(function()
+                if ChamHighlights[obj] then
+                    ChamHighlights[obj]:Destroy()
+                    ChamHighlights[obj] = nil
+                end
+            end)
+            table[obj] = nil
+        end
+    end
+end
+local function IsVisible(target)
+    if not target then return false end
+    local origin = Cam.CFrame.Position
+    local direction = (target.Position - origin).Unit
+    local ray = Ray.new(origin, direction * 500)
+    local hit, _ = workspace:FindPartOnRayWithIgnoreList(ray, {LP.Character})
+    return hit == target or hit == nil
+end
+
+local function SetupPlayerCleanup(plr)
+    if plr == LP then return end
+    plr.CharacterRemoving:Connect(function(char)
+        pcall(function()
+            if PlayerESPTable[char] then
+                local data = PlayerESPTable[char]
+                for _, v in pairs(data) do
+                    if typeof(v) == "Instance" and v.Remove then v:Remove() end
+                end
+                PlayerESPTable[char] = nil
+            end
+        end)
+        pcall(function()
+            if ChamHighlights[char] then
+                ChamHighlights[char]:Destroy()
+                ChamHighlights[char] = nil
+            end
+        end)
+    end)
+end
+
+for _, plr in pairs(Players:GetPlayers()) do
+    SetupPlayerCleanup(plr)
+end
+Players.PlayerAdded:Connect(SetupPlayerCleanup)
+Players.PlayerRemoving:Connect(function(plr)
+    if plr.Character then
+        pcall(function()
+            local char = plr.Character
+            if PlayerESPTable[char] then
+                local data = PlayerESPTable[char]
+                for _, v in pairs(data) do
+                    if typeof(v) == "Instance" and v.Remove then v:Remove() end
+                end
+                PlayerESPTable[char] = nil
+            end
+        end)
+        pcall(function()
+            if ChamHighlights[plr.Character] then
+                ChamHighlights[plr.Character]:Destroy()
+                ChamHighlights[plr.Character] = nil
+            end
+        end)
+    end
+end)
+
+local function UpdateESP()
+    CleanupOldESP(PlayerESPTable)
+    CleanupOldESP(LootNPCESPTable)
+    
+    if Settings.ESP.Players then
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LP and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                CreateESP(PlayerESPTable, plr.Character, Color3.fromRGB(180, 80, 255), false, plr.Name)
+                ApplyChams(plr.Character, Settings.ESP.Chams)
+            end
+        end
+    end
+    
+    local now = tick()
+    if now - lastLootNPCUpdate > 2 then
+        lastLootNPCUpdate = now
+        if Settings.NPC.Enabled then
+            local npcFolder = FindNPCFolder()
+            if npcFolder then
+                for _, model in pairs(npcFolder:GetDescendants()) do
+                    if model:IsA("Model") and model:FindFirstChild("HumanoidRootPart") then
+                        CreateESP(LootNPCESPTable, model, Color3.fromRGB(80, 160, 255), false)
+                    end
+                end
+            end
+        end
+        if Settings.Loot.Enabled then
+            local lootFolder = FindLootFolder()
+            if lootFolder then
+                for _, item in pairs(lootFolder:GetDescendants()) do
+                    if item:IsA("Model") and item.PrimaryPart then
+                        local name = item.Name:lower()
+                        if name:find("crate") or name:find("case") or name:find("locker") or name:find("box") or name:find("safe") or name:find("loot") or name:find("item") or name:find("chest") then
+                            CreateESP(LootNPCESPTable, item, Color3.fromRGB(255, 215, 0), true)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+RS.RenderStepped:Connect(function()
+    UpdateESP()
+    local center = Vector2.new(Cam.ViewportSize.X/2, Cam.ViewportSize.Y/2)
+    local bestTarget = nil
+    local bestDist = 9999
+    if Settings.VisibleCheck.Enabled then
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LP and plr.Character then
+                local part = plr.Character:FindFirstChild(Settings.Aimbot.TargetPart) or plr.Character:FindFirstChild("Head")
+                if part then
+                    local s, on = Cam:WorldToViewportPoint(part.Position)
+                    if on then
+                        local d = (Vector2.new(s.X, s.Y) - center).Magnitude
+                        if d < Settings.Aimbot.FOV and d < bestDist then
+                            bestDist = d
+                            bestTarget = part
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if Settings.VisibleCheck.Enabled then
+        if not VisibleBar then
+            VisibleBar = Drawing.new("Text")
+            VisibleBar.Size = 18
+            VisibleBar.Center = true
+            VisibleBar.Outline = true
+            VisibleBar.Font = 2
+        end
+        if bestTarget then
+            local name = bestTarget.Parent.Name
+            local dist = math.floor((Cam.CFrame.Position - bestTarget.Position).Magnitude)
+            local visible = IsVisible(bestTarget) and "VISIBLE" or "NOT VISIBLE"
+            local color = IsVisible(bestTarget) and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(255, 60, 60)
+            VisibleBar.Text = name .. " " .. dist .. "m " .. visible
+            VisibleBar.Position = Vector2.new(center.X, center.Y + Settings.Aimbot.FOV + 35)
+            VisibleBar.Color = color
+            VisibleBar.Visible = true
+        else
+            VisibleBar.Visible = false
+        end
+    elseif VisibleBar then
+        VisibleBar.Visible = false
+    end
+    
+    -- PLAYER ESP
+    for obj, data in pairs(PlayerESPTable) do
+        pcall(function()
+            if obj and obj.Parent and Settings.ESP.Players then
+                local root = obj:FindFirstChild("HumanoidRootPart") or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+                if root then
+                    local pos = root.Position
+                    local screen, onScreen = Cam:WorldToViewportPoint(pos)
+                    local dist = (Cam.CFrame.Position - pos).Magnitude
+                    if onScreen and dist <= Settings.ESP.Distance then
+                        local height = 3800 / screen.Z
+                        local width = height * 0.55
+                        data.Box.Size = Vector2.new(width, height)
+                        data.Box.Position = Vector2.new(screen.X - width/2, screen.Y - height/2)
+                        data.Box.Color = data.Color
+                        data.Box.Visible = Settings.ESP.Boxes
+                        data.Tracer.From = Vector2.new(Cam.ViewportSize.X/2, Cam.ViewportSize.Y)
+                        data.Tracer.To = Vector2.new(screen.X, screen.Y)
+                        data.Tracer.Color = data.Color
+                        data.Tracer.Visible = Settings.ESP.Tracers
+                        if obj:FindFirstChild("Humanoid") then
+                            local health = obj.Humanoid.Health / obj.Humanoid.MaxHealth
+                            data.HealthBar.Size = Vector2.new(4, height * health)
+                            data.HealthBar.Position = Vector2.new(data.Box.Position.X - 6, data.Box.Position.Y + height * (1 - health))
+                            data.HealthBar.Color = Color3.fromRGB(255 - 255 * health, 255 * health, 0)
+                            data.HealthBar.Visible = Settings.ESP.Health
+                        else
+                            data.HealthBar.Visible = false
+                        end
+                        local displayName = data.PlayerName or obj.Name
+                        data.Name.Text = displayName .. " [" .. math.floor(dist) .. "m]"
+                        data.Name.Position = Vector2.new(screen.X, screen.Y - height/2 + 16)
+                        data.Name.Color = data.Color
+                        data.Name.Visible = Settings.ESP.Names
+                        if data.Holding then
+                            local tool = obj:FindFirstChildWhichIsA("Tool")
+                            data.Holding.Text = tool and ("Holding: " .. tool.Name) or ""
+                            data.Holding.Position = Vector2.new(screen.X, screen.Y + height/2 + 8)
+                            data.Holding.Color = Color3.fromRGB(255, 180, 80)
+                            data.Holding.Visible = true
+                        end
+                    else
+                        data.Box.Visible = false
+                        data.Name.Visible = false
+                        data.HealthBar.Visible = false
+                        data.Tracer.Visible = false
+                        if data.Holding then data.Holding.Visible = false end
+                    end
+                end
+            else
+                -- Hide when toggled off
+                if data.Box then data.Box.Visible = false end
+                if data.Name then data.Name.Visible = false end
+                if data.HealthBar then data.HealthBar.Visible = false end
+                if data.Tracer then data.Tracer.Visible = false end
+                if data.Holding then data.Holding.Visible = false end
+            end
+        end)
+    end
+    
+    -- LOOT / NPC ESP
+    if Settings.Loot.Enabled or Settings.NPC.Enabled then
+        for obj, data in pairs(LootNPCESPTable) do
+            pcall(function()
+                if obj and obj.Parent then
+                    local root = obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart")
+                    if root then
+                        local pos = root.Position
+                        local screen, onScreen = Cam:WorldToViewportPoint(pos)
+                        local dist = (Cam.CFrame.Position - pos).Magnitude
+                        local maxDist = data.IsLoot and Settings.Loot.Distance or Settings.NPC.Distance
+                        local show = data.IsLoot and Settings.Loot.Enabled or (not data.IsLoot and Settings.NPC.Enabled)
+                        if onScreen and dist <= maxDist and show then
+                            local displayName = obj.Name
+                            data.Name.Text = displayName .. " [" .. math.floor(dist) .. "m]"
+                            data.Name.Position = Vector2.new(screen.X, screen.Y - 15)
+                            data.Name.Color = data.Color
+                            data.Name.Visible = Settings.ESP.Names
+                        else
+                            data.Name.Visible = false
+                        end
+                    end
+                end
+            end)
+        end
+    end
+    
+    if Settings.Aimbot.ShowFOV then
+        if not FOVCircle then
+            FOVCircle = Drawing.new("Circle")
+            FOVCircle.Thickness = 2
+            FOVCircle.Filled = false
+            FOVCircle.Color = Color3.fromRGB(255, 80, 120)
+        end
+        FOVCircle.Position = center
+        FOVCircle.Radius = Settings.Aimbot.FOV
+        FOVCircle.Visible = true
+    elseif FOVCircle then
+        FOVCircle.Visible = false
+    end
+    if Settings.Aimbot.Enabled and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        local closest, minDist = nil, Settings.Aimbot.FOV
+        local centerVec = Vector2.new(Cam.ViewportSize.X/2, Cam.ViewportSize.Y/2)
+        for _, plr in pairs(Players:GetPlayers()) do
+            if plr ~= LP and plr.Character then
+                local part = plr.Character:FindFirstChild(Settings.Aimbot.TargetPart) or plr.Character:FindFirstChild("Head")
+                if part then
+                    local s, on = Cam:WorldToViewportPoint(part.Position)
+                    if on then
+                        local d = (Vector2.new(s.X, s.Y) - centerVec).Magnitude
+                        if d < minDist then
+                            minDist = d
+                            closest = part
+                        end
+                    end
+                end
+            end
+        end
+        if closest then
+            local targetPos = Cam:WorldToScreenPoint(closest.Position)
+            local mousePos = Vector2.new(Mouse.X, Mouse.Y)
+            local moveX = (targetPos.X - mousePos.X) / Settings.Aimbot.Smooth
+            local moveY = (targetPos.Y - mousePos.Y) / Settings.Aimbot.Smooth
+            mousemoverel(moveX, moveY)
+        end
+    end
+end)
+-- GUI (unchanged - same as before)
+local SG = Instance.new("ScreenGui", LP.PlayerGui)
+SG.Name = "Havoc"
+SG.ResetOnSpawn = false
+local Main = Instance.new("Frame", SG)
+Main.Size = UDim2.new(0, 820, 0, 560)
+Main.Position = UDim2.new(0.5, -410, 0.5, -280)
+Main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Main.BorderSizePixel = 0
+Main.Visible = false
+local Title = Instance.new("TextLabel", Main)
+Title.Size = UDim2.new(1,0,0,60)
+Title.BackgroundColor3 = Color3.fromRGB(15,15,15)
+Title.Text = "HAVOC"
+Title.TextColor3 = Color3.fromRGB(255, 80, 120)
+Title.TextSize = 22
+Title.Font = Enum.Font.GothamBold
+local TabFrame = Instance.new("Frame", Main)
+TabFrame.Size = UDim2.new(1,0,0,50)
+TabFrame.Position = UDim2.new(0,0,0,60)
+TabFrame.BackgroundColor3 = Color3.fromRGB(25,25,25)
+local Content = Instance.new("Frame", Main)
+Content.Size = UDim2.new(1,0,1,-110)
+Content.Position = UDim2.new(0,0,0,110)
+Content.BackgroundColor3 = Color3.fromRGB(18,18,18)
+local frames = {}
+local tabNames = {"Combat", "Visuals", "Loot", "NPC", "Exploit"}
+for i, name in ipairs(tabNames) do
+    local btn = Instance.new("TextButton", TabFrame)
+    btn.Size = UDim2.new(1/#tabNames, 0, 1, 0)
+    btn.Position = UDim2.new((i-1)/#tabNames, 0, 0, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = name
+    btn.TextColor3 = Color3.fromRGB(200,200,200)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 14
+    local frame = Instance.new("ScrollingFrame", Content)
+    frame.Size = UDim2.new(1,0,1,0)
+    frame.BackgroundTransparency = 1
+    frame.ScrollBarThickness = 4
+    frame.Visible = (i == 1)
+    frame.CanvasSize = UDim2.new(0,0,0,800)
+    table.insert(frames, frame)
+    btn.MouseButton1Click:Connect(function()
+        for _, f in pairs(frames) do f.Visible = false end
+        frame.Visible = true
+    end)
+end
+local function AddToggle(parent, y, text, default, callback)
+    local toggleFrame = Instance.new("Frame", parent)
+    toggleFrame.Size = UDim2.new(0.95,0,0,50)
+    toggleFrame.Position = UDim2.new(0.025,0,0,y)
+    toggleFrame.BackgroundTransparency = 1
+    local label = Instance.new("TextLabel", toggleFrame)
+    label.Size = UDim2.new(0.7,0,1,0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.new(1,1,1)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 15
+    local btn = Instance.new("TextButton", toggleFrame)
+    btn.Size = UDim2.new(0, 40, 0, 24)
+    btn.Position = UDim2.new(0.85,0,0.5,-12)
+    btn.BackgroundColor3 = default and Color3.fromRGB(255, 80, 120) or Color3.fromRGB(60,60,60)
+    btn.Text = ""
+    btn.BorderSizePixel = 0
+    local circle = Instance.new("Frame", btn)
+    circle.Size = UDim2.new(0,18,0,18)
+    circle.Position = UDim2.new(default and 1 or 0, default and -20 or 2, 0.5, -9)
+    circle.BackgroundColor3 = Color3.new(1,1,1)
+    circle.BorderSizePixel = 0
+    btn.MouseButton1Click:Connect(function()
+        default = not default
+        btn.BackgroundColor3 = default and Color3.fromRGB(255, 80, 120) or Color3.fromRGB(60,60,60)
+        circle.Position = UDim2.new(default and 1 or 0, default and -20 or 2, 0.5, -9)
+        callback(default)
+    end)
+end
+local function AddSlider(parent, y, text, minVal, maxVal, default, callback)
+    local sliderFrame = Instance.new("Frame", parent)
+    sliderFrame.Size = UDim2.new(0.95,0,0,70)
+    sliderFrame.Position = UDim2.new(0.025,0,0,y)
+    sliderFrame.BackgroundTransparency = 1
+    local label = Instance.new("TextLabel", sliderFrame)
+    label.Size = UDim2.new(1,0,0,25)
+    label.BackgroundTransparency = 1
+    label.Text = text .. ": " .. default
+    label.TextColor3 = Color3.new(1,1,1)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Font = Enum.Font.Gotham
+    label.TextSize = 14
+    local bar = Instance.new("Frame", sliderFrame)
+    bar.Size = UDim2.new(0.8,0,0,8)
+    bar.Position = UDim2.new(0.1,0,0,35)
+    bar.BackgroundColor3 = Color3.fromRGB(50,50,50)
+    bar.BorderSizePixel = 0
+    local fill = Instance.new("Frame", bar)
+    fill.Size = UDim2.new((default - minVal) / (maxVal - minVal), 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(255, 80, 120)
+    fill.BorderSizePixel = 0
+    local knob = Instance.new("Frame", bar)
+    knob.Size = UDim2.new(0,12,0,12)
+    knob.Position = UDim2.new((default - minVal) / (maxVal - minVal), -6, 0.5, -6)
+    knob.BackgroundColor3 = Color3.new(1,1,1)
+    knob.BorderSizePixel = 0
+    local dragging = false
+    bar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end
+    end)
+    bar.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    end)
+    game:GetService("UserInputService").InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local mouseX = input.Position.X
+            local barPos = bar.AbsolutePosition.X
+            local barSize = bar.AbsoluteSize.X
+            local percent = math.clamp((mouseX - barPos) / barSize, 0, 1)
+            local value = math.floor(minVal + (maxVal - minVal) * percent)
+           
+            fill.Size = UDim2.new(percent, 0, 1, 0)
+            knob.Position = UDim2.new(percent, -6, 0.5, -6)
+            label.Text = text .. ": " .. value
+            callback(value)
+        end
+    end)
+end
+-- Combat Tab (unchanged)
+AddToggle(frames[1], 10, "Aimbot Enabled", Settings.Aimbot.Enabled, function(v) Settings.Aimbot.Enabled = v end)
+AddToggle(frames[1], 70, "Show FOV Circle", Settings.Aimbot.ShowFOV, function(v) Settings.Aimbot.ShowFOV = v end)
+AddToggle(frames[1], 130, "Visible Check", Settings.VisibleCheck.Enabled, function(v) Settings.VisibleCheck.Enabled = v end)
+AddSlider(frames[1], 200, "Aimbot FOV", 30, 500, Settings.Aimbot.FOV, function(v) Settings.Aimbot.FOV = v end)
+AddSlider(frames[1], 280, "Aimbot Smoothing", 1, 20, Settings.Aimbot.Smooth, function(v) Settings.Aimbot.Smooth = v end)
+-- Target Part (unchanged)
+local targetParts = {"Head", "UpperTorso", "HumanoidRootPart"}
+local currentY = 360
+for _, part in ipairs(targetParts) do
+    local btn = Instance.new("TextButton", frames[1])
+    btn.Size = UDim2.new(0.9,0,0,40)
+    btn.Position = UDim2.new(0.05,0,0,currentY)
+    btn.BackgroundColor3 = Settings.Aimbot.TargetPart == part and Color3.fromRGB(255, 80, 120) or Color3.fromRGB(60,60,60)
+    btn.Text = "Aim at: " .. part
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 14
+    btn.MouseButton1Click:Connect(function()
+        Settings.Aimbot.TargetPart = part
+        for _, b in pairs(frames[1]:GetChildren()) do
+            if b:IsA("TextButton") and b.Text:find("Aim at:") then
+                b.BackgroundColor3 = (b.Text:find(part)) and Color3.fromRGB(255, 80, 120) or Color3.fromRGB(60,60,60)
+            end
+        end
+    end)
+    currentY = currentY + 50
+end
+-- Visuals Tab
+AddToggle(frames[2], 10, "Player ESP", Settings.ESP.Players, function(v) Settings.ESP.Players = v end)
+AddToggle(frames[2], 70, "Boxes", Settings.ESP.Boxes, function(v) Settings.ESP.Boxes = v end)
+AddToggle(frames[2], 130, "Names", Settings.ESP.Names, function(v) Settings.ESP.Names = v end)
+AddToggle(frames[2], 190, "Health Bars", Settings.ESP.Health, function(v) Settings.ESP.Health = v end)
+AddToggle(frames[2], 250, "Tracers", Settings.ESP.Tracers, function(v) Settings.ESP.Tracers = v end)
+AddToggle(frames[2], 310, "Chams", Settings.ESP.Chams, function(v) Settings.ESP.Chams = v end)
+AddSlider(frames[2], 380, "ESP Distance", 200, 2000, Settings.ESP.Distance, function(v) Settings.ESP.Distance = v end)
+-- Loot Tab
+AddToggle(frames[3], 10, "Loot ESP", Settings.Loot.Enabled, function(v) Settings.Loot.Enabled = v end)
+AddSlider(frames[3], 70, "Loot Distance", 200, 1500, Settings.Loot.Distance, function(v) Settings.Loot.Distance = v end)
+-- NPC Tab
+AddToggle(frames[4], 10, "NPC ESP (Scav)", Settings.NPC.Enabled, function(v) Settings.NPC.Enabled = v end)
+AddSlider(frames[4], 70, "NPC Distance", 200, 1500, Settings.NPC.Distance, function(v) Settings.NPC.Distance = v end)
+-- Exploit Tab
+AddToggle(frames[5], 10, "Full Bright", Settings.FullBright.Enabled, function(v)
+    Settings.FullBright.Enabled = v
+    ToggleFullBright(v)
+end)
+UIS.InputBegan:Connect(function(i)
+    if i.KeyCode == Enum.KeyCode.RightShift then
+        Main.Visible = not Main.Visible
+    end
+end)
+print("✅ Loot ESP working + Player ESP toggle fixed | RightShift to open")
